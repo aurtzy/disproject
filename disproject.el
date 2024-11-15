@@ -419,7 +419,8 @@ These characters represent the following states:
    :class transient-column
    :pad-keys t
    :setup-children disproject-custom--setup-suffixes]
-  [("SPC" "Main dispatch" disproject-dispatch
+  [("<tab>" "View command buffer" "--view-buffer")
+   ("SPC" "Main dispatch" disproject-dispatch
     :transient transient--do-replace)]
   (interactive)
   (transient-setup
@@ -515,6 +516,11 @@ type and directly returned instead, ignoring KEY."
 ;; Functions that query the Transient state should have their names be prefixed
 ;; with "disproject--state-" to provide unique identifiers that can be searched
 ;; for.
+
+(defun disproject--state-view-buffer ()
+  "Return whether to only view a buffer."
+  (if-let* ((args (transient-args transient-current-command)))
+      (transient-arg-value "--view-buffer" args)))
 
 (defun disproject--state-custom-suffixes ()
   "Return the `disproject-dispatch' custom suffixes for this scope."
@@ -618,16 +624,22 @@ SPEC-ENTRY is a single entry from the specification described by
            ;; Expose buffer name to the user; see note in
            ;; `disproject-custom-suffixes'.
            (let ((disproject-command-buffer-name ,disproject-command-buffer-name))
-             ,(disproject-custom--suffix-command command-type command)
-             ;; Auto-refresh menu on command completion
-             (when-let* ((buffer (get-buffer disproject-command-buffer-name))
-                         (process (get-buffer-process buffer))
-                         ((not (advice-function-member-p
-                                #'disproject-custom--suffix-refresh-transient
-                                (process-sentinel process)))))
-               (add-function
-                :before (process-sentinel process)
-                #'disproject-custom--suffix-refresh-transient)))))))))
+             (if (disproject--state-view-buffer)
+                 (if (get-buffer disproject-command-buffer-name)
+                     (disproject--with-environment
+                      (switch-to-buffer disproject-command-buffer-name))
+                   (error "No buffer with name found: %s"
+                          disproject-command-buffer-name))
+               ,(disproject-custom--suffix-command command-type command)
+               ;; Auto-refresh menu on command completion
+               (when-let* ((buffer (get-buffer disproject-command-buffer-name))
+                           (process (get-buffer-process buffer))
+                           ((not (advice-function-member-p
+                                  #'disproject-custom--suffix-refresh-transient
+                                  (process-sentinel process)))))
+                 (add-function
+                  :before (process-sentinel process)
+                  #'disproject-custom--suffix-refresh-transient))))))))))
 
 (defun disproject-custom--suffix-command (command-type command)
   "Dispatch a command s-expression to be evaluated in a custom suffix.
