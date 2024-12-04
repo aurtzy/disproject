@@ -63,14 +63,6 @@ respect `default-directory' or
 `project-current-directory-override', which the macro sets."
   :group 'disproject)
 
-(defvar disproject-prefix--transient-commands nil
-  "Disproject transient prefix commands.
-
-This is a list of prefix commands that use and permit sharing a
-`disproject-scope' instance as a scope value.  Prefixes which use
-`disproject-prefix' or a child type are automatically added to
-this list via `initialize-instance'.")
-
 ;;;; Custom variables.
 
 (defcustom disproject-custom-allowed-suffixes '()
@@ -418,20 +410,13 @@ All prefixes that need to make use of `disproject-scope' as the
 scope object should be of this type or inherit from it, as it is
 responsible for preserving the scope across menus.")
 
-(cl-defmethod initialize-instance :after ((obj disproject-prefix) &rest _slots)
-  "Add OBJ command to `disproject-prefix--transient-commands' if not a member."
-  (let ((command (oref obj command)))
-    (unless (memq command disproject-prefix--transient-commands)
-      (add-to-list 'disproject-prefix--transient-commands command))))
-
 (cl-defmethod transient-init-scope ((obj disproject-prefix))
   "Initialize transient scope for OBJ.
 
-Inherit the current prefix's scope if it is part of
-`disproject-prefix--transient-commands'; otherwise, initialize a
-new `disproject-scope' scope value if it hasn't already been
-initialized."
-  (if (memq transient-current-command disproject-prefix--transient-commands)
+Inherit the current prefix's scope if it is a `disproject-prefix'
+type; otherwise, initialize a new `disproject-scope' scope value
+if it hasn't already been initialized."
+  (if (cl-typep transient-current-prefix 'disproject-prefix)
       (let ((scope (disproject--scope)))
         (setf (disproject-scope-prefer-other-window? scope)
               (disproject--state-prefer-other-window?))
@@ -1050,10 +1035,8 @@ different scope objects to be created (which is not usually desired)."
   ;; Maybe document that `disproject-with-environment' should be used so that
   ;; `disproject--environment-scope' is bound?
   (or disproject--environment-scope
-      ;; Always fall back to initializing scope from `disproject-prefix' (i.e. class
-      ;; of `disproject-dispatch') rather than a child class to be predictable.
-      (transient-scope (cons 'disproject-dispatch
-                             disproject-prefix--transient-commands))))
+      ;; Fall back to initializing scope with `disproject-dispatch' if needed.
+      (transient-scope 'disproject-dispatch 'disproject-prefix)))
 
 (defmacro disproject--with-environment-buffer (&rest body)
   "Run BODY in a disproject environment buffer.
