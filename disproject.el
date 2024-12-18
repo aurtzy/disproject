@@ -588,7 +588,7 @@ character.  These characters represent the following states:
   :refresh-suffixes t
   disproject--selected-project-header-group
   ["Custom suffix commands"
-   :class transient-column
+   :class transient-columns
    :pad-keys t
    :setup-children disproject-custom--setup-suffixes]
   [ :class transient-row
@@ -1376,8 +1376,12 @@ keyword."
                            (disproject-scope-selected-project-ensure
                             (disproject--scope)))))
      (if (disproject-custom--old-form? custom-suffixes)
-         (mapcar #'disproject-custom--suffix custom-suffixes)
-       custom-suffixes))))
+         (list (vconcat (mapcar #'disproject-custom--suffix custom-suffixes)))
+       ;; Value can omit vectorizing value if only one column of suffixes is
+       ;; specified.
+       (if (and (listp custom-suffixes) (listp (car custom-suffixes)))
+           (list (vconcat custom-suffixes))
+         custom-suffixes)))))
 
 ;;;; Suffixes.
 
