@@ -90,83 +90,51 @@ this list via `initialize-instance'.")
 The custom dispatch was initially designed for suites of
 compilation commands, but it is flexible enough to be used for
 any custom command designated for a particular project, like
-starting servers or updates.
+starting servers or updating dependencies.
 
-The value should be a list of transient-like specification
-entries (KEY DESCRIPTION {PROPERTY VALUE} ...).
+This value is passed to `transient-parse-suffixes' to fill the
+\"Custom suffixes section\"; see Info node
+`(transient)Group Specifications' or Info node `(transient)Suffix
+Specifications' for documentation on syntax.
 
-KEY is the key-bind that will be used in the Transient menu.  Key
-sequences starting with alphanumeric characters (regexp
-\"[a-zA-Z0-9]\") are reserved for the user.
+Suffixes should specify the `class' slot as `disproject-suffix'
+or one of its subclasses to apply menu options and other features
+as needed.  `disproject-suffix' is the most general class, which
+applies settings from `disproject-with-environment' before
+running the command.
 
-DESCRIPTION is used as the Transient command description.
+Subclasses like `disproject-compilation-suffix' and
+`disproject-shell-command-suffix' provide additional features for
+handling processes associated with a command, like managing the
+compilation buffer name and showing an indicator for process
+status in the description.  See their respective documentations
+for more information about customizing specific behaviors in
+these classes.
 
-The following properties are required:
+See `disproject-suffix' for documentation on extending the
+class (or its subclasses).
 
-`:command' is an s-expression which is evaluated and used
-depending on the command type `:command-type'.
+Here is an example value, for reference:
 
-`:command-type' is a symbol that specifies what to do with the
-value of `:command'.  It can be any of the following keys:
-
-  bare-call: the value is called as an interactive function from
-  the current buffer.  This is the only command type that is not
-  automatically run in the environment provided by
-  `disproject-with-environment'.
-
-  call: the value will be called as an interactive function.
-
-  compile: the value of `:command' should be a string or an
-  interactive function that returns a string that will be passed
-  to `compile' as the shell command to run.
-
-  run: the value of `:command' should be a string or an
-  interactive function returning a string, which will be passed
-  to `async-shell-command'.
-
-When using the \\='bare-call or \\='call command types, consider
-using the variable `disproject-process-buffer-name' (available
-when evaluating `:command') as the buffer name for processes to
-enable tracking e.g. process state.
-
-Some optional properties may be set as well:
-
-`:identifier' is used as part of the buffer name, and should be
-unique to the command.  `disproject-process-buffer-name' is
-applied to the value (or first word in the description if not
-specified) to get the buffer name.  Users may choose to set the
-same identifier for multiple commands to mark them as
-incompatible (only one can run at a given time).  This relies on
-commands like `compile' which notify the user that a buffer with
-the same name already has a process running.
-
-To illustrate usage of `disproject-custom-suffixes', for
-example, the following may be used as a dir-locals.el value for
-some project to add \"make -k\" and \"guile --help\" as compile
-commands and some custom `find-file' call commands:
-
-  ((\"m\" \"Make\"
-    :command-type compile
-    :command \"echo Running make...; make -k\"
-    :identifier \"make\")
-   (\"h\" \"Get help from a program (if it supports --help)\"
-    :command-type compile
-    :command (lambda (program)
-               (interactive \"sProgram: \")
-               (concat program \" --help\"))
-    :identifier \"guile-help\")
-   (\"r\" \"Sleep for a couple of seconds\"
-    :command-type run
-    :command \"echo Sleeping... && sleep 5 && echo Done sleeping.\")
-   (\"f\" \"Find a file\"
-    :command-type call
-    :command #\\='find-file)
-   (\"F\" \"Announce the finding a file\"
-    :command-type call
-    :command (lambda ()
-               (interactive)
-               (message \"FINDING A FILE!\")
-               (call-interactively #\\='find-file))))
+  ((\"f\" \"Find a file from project\" find-file
+    :class disproject-suffix)
+   (\"F\" \"Loudly find a file\"
+    (lambda () (interactive)
+      (message \"FINDING A FILE!\")
+      (call-interactively #\\='find-file))
+    :class disproject-suffix)
+   (\"m\" \"Run make\"
+    (lambda () (interactive) \"echo Running make...; make -k\")
+    :class disproject-compilation-suffix
+    :buffer-id \"make\")
+   (\"M\" \"Run make test\"
+    (lambda () (interactive) \"echo Running tests...; make test\")
+    :class disproject-compilation-suffix
+    :buffer-id \"make\")
+   (\"s\" \"Sleep for a couple of seconds\"
+    (lambda () (interactive)
+      \"echo Sleeping... && sleep 5 && echo Done sleeping.\")
+    :class disproject-shell-command-suffix))
 
 This variable is marked safe due to various reasons discussed in
 `disproject-custom--suffixes-allowed?'.  Prompts are deferred to
