@@ -34,11 +34,11 @@
 
 ;;; Code:
 
-(require 'cl-extra)
 (require 'cl-lib)
 (require 'eieio)
 (require 'grep)
 (require 'pcase)
+(require 'pp)
 (require 'map)
 (require 'project)
 (require 'transient)
@@ -362,7 +362,27 @@ n -- to ignore them and use the default custom suffixes.
             ;; TODO: Replace this pretty print with a custom one to give a more
             ;; uniform layout (e.g. new line for each keyword followed by
             ;; value).  This one is particularly funky with the ":" prefix.
-            (cl-prettyprint custom-suffixes)
+            (save-excursion
+              (let ((pp-use-max-width t)
+                    (pp-max-width 60)
+                    (pp-escape-newlines nil))
+                (pp-emacs-lisp-code custom-suffixes)))
+            (dolist (pair '(;; FIXME: This can produce incorrect output in the
+                            ;; edge case where there is an escaped backslash
+                            ;; right before an "n", like "\\n".
+                            ("\\\\n" . "\n")
+                            ;; Remove empty lines that can result from the
+                            ;; pretty-printer.
+                            ("\n+" . "\n")
+                            ;; The pretty-printer sometimes has open parentheses
+                            ;; at the end of a line; these can be combined with
+                            ;; the next line.
+                            ("(\n\s+" . "(")))
+              (save-excursion
+                (pcase-exhaustive pair
+                  (`(,regexp . ,replacement)
+                   (while (re-search-forward regexp nil t)
+                     (replace-match replacement))))))
             (setq-local cursor-type nil)
             (set-buffer-modified-p nil)
             (goto-char (point-min)))
