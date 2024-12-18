@@ -35,6 +35,7 @@
 ;;; Code:
 
 (require 'cl-extra)
+(require 'cl-lib)
 (require 'eieio)
 (require 'grep)
 (require 'pcase)
@@ -1143,6 +1144,231 @@ window if \"--prefer-other-window\" is enabled."
          ;; if mise-mode is enabled.
          (when enable-mise (funcall enable-mise))
          ,@body))))
+
+;;;; Suffix classes.
+
+;;;;; Main Disproject suffix class.
+
+(defclass disproject-suffix (transient-suffix) ()
+  "Class for Disproject suffixes.
+
+This is the top-level class that simply applies options from
+`disproject-with-environment' when the command is run.
+
+The `disproject-suffix-wrappers' method is intended for
+modification of the suffix command's behavior.  Classes may
+inherit from this class to, for example, set a variable to be
+available in the environment.")
+
+(cl-defmethod initialize-instance :before ((obj disproject-suffix) &optional slots)
+  "Do additional initialization for OBJ before everything else.
+
+Wrap the command in SLOTS with wrappers from `disproject-suffix-wrappers'."
+  ;; We should avoid adding advice directly to the initial command, since the
+  ;; command values may reference commands used in other cases where advice
+  ;; shouldn't be run.
+  (let* ((sym (plist-get slots :command))
+         (old-command (symbol-function sym))
+         (new-command (seq-reduce (lambda (command wrapper)
+                                    (lambda (&rest _r) (interactive)
+                                      (funcall wrapper command)))
+                                  (disproject-suffix-wrappers obj)
+                                  old-command)))
+    ;; This may produce incorrect results.  If a new prefix is defined that uses
+    ;; this suffix with another class, for example, this can affect the suffix's
+    ;; behavior in other prefixes.
+    (advice-remove sym 'disproject-suffix)
+    (advice-add sym :override new-command '((name . disproject-suffix)))))
+
+
+(cl-defmethod disproject-suffix-wrappers ((_obj disproject-suffix))
+  "Return a list of functions to wrap the initial suffix command.
+
+The functions should take as argument a 0-arity interactive
+command to wrap, calling interactively where appropriate.  The
+first function in the list will be the innermost wrapper."
+  (list (lambda (command)
+          (disproject-with-environment
+            (call-interactively command)))))
+
+;;;;; Abstract suffix class for commands that spawn a process.
+
+(defclass disproject-process-suffix (disproject-suffix)
+  ((buffer-id :initarg :buffer-id
+              :initform nil
+              :documentation "\
+String.  Unique identifier, used to construct the name of the
+process buffer associated with this suffix command.
+
+Users may set the same identifier for multiple commands to mark
+them as incompatible (only one can run at a given time).  This
+relies on commands like `compile' to notify the user that a
+buffer with the same name already has a process running.
+
+If the `description' slot of the instance is a string, it may be
+used as the default value instead for uniqueness.  Otherwise -
+assuming that if the description is not a string, it's a function
+- \"default\" will be used, since there is no way to guarantee
+that a function will always return the same identifier.")
+   (display-status? :initarg :display-status?
+                    :initform t
+                    :documentation "\
+Non-nil to display status of process in associated buffer."))
+  "Class for Disproject suffixes that spawn a process that should be tracked.
+
+This provides methods for managing things related to the
+associated command's process buffer.
+
+Classes that inherit from this must still implement their own
+logic to guarantee that the associated process buffer has the
+correct name."
+  :abstract t)
+
+(cl-defmethod initialize-instance :after ((obj disproject-process-suffix)
+                                          &rest _slots)
+  "Do additional initialization for OBJ."
+  (when (null (oref obj buffer-id))
+    (let ((description (oref obj description)))
+      (oset obj buffer-id (if (stringp description)
+                              description
+                            "default")))))
+
+;; TODO: This should be renamed to `disproject-process-buffer-name' to indicate
+;; it can be used by other packages, but the name is currently occupied; do so
+;; once the old function is removed.
+(cl-defmethod disproject--process-buffer-name ((obj disproject-process-suffix)
+                                               project-name)
+  "Return the OBJ suffix's process's buffer name associated with PROJECT-NAME.
+
+PROJECT-NAME is the project name, which will be used to give a
+unique namespace to the project's process buffers."
+  (concat "*"
+          project-name
+          "-process|"
+          (oref obj buffer-id)
+          "*"))
+
+(cl-defmethod transient-format-description ((obj disproject-process-suffix))
+  "Format description for OBJ.
+
+If the `display-status?' slot is non-nil, the description will be
+formatted with an indicator that tracks the associated process
+buffer's status."
+  ;; Preserve the transient "bug" warning if there is no description.
+  (if-let* ((description (cl-call-next-method)))
+      (if-let* (((oref obj display-status?))
+                (project (disproject-scope-selected-project (disproject--scope)))
+                (buffer (get-buffer (disproject--process-buffer-name
+                                     obj
+                                     (project-name
+                                      (disproject-project-instance project))))))
+          (concat (cond
+                   ((null buffer)
+                    "")
+                   ((get-buffer-process buffer)
+                    (concat (propertize "[a]" 'face 'transient-enabled-suffix)
+                            " "))
+                   (t
+                    (concat (propertize "[i]" 'face 'transient-inactive-value)
+                            " ")))
+                  description)
+        description)))
+
+(cl-defmethod disproject-suffix-wrappers ((obj disproject-process-suffix))
+  "Return a list of wrappers for the initial command of OBJ after adding its own.
+
+When the `display-status?' slot is non-nil, add a sentinel to
+refresh the transient on completion so the description can update
+to reflect the correct status."
+  (cons (lambda (command)
+          (call-interactively command)
+          (when (oref obj display-status?)
+            (disproject-add-sentinel-refresh-transient
+             (disproject--process-buffer-name
+              obj
+              (project-name (disproject-project-instance
+                             (disproject-scope-selected-project-ensure
+                              disproject--environment-scope)))))))
+        (cl-call-next-method)))
+
+;;;;; Suffix class for compilation commands.
+
+(defclass disproject-compilation-suffix (disproject-process-suffix) ()
+  "Disproject suffix class for compilation commands.
+
+When using this class, the `command' slot should be a function
+that returns a string or nil.  The string will be passed to
+`compile'; otherwise, if the value is nil, `compile' will be
+called interactively.")
+
+(cl-defmethod disproject-suffix-wrappers ((obj disproject-compilation-suffix))
+  "Return a list of wrappers for the initial command of OBJ after adding its own.
+
+Set `compilation-buffer-name-function' and `compile' the
+command's return value."
+  (cons (lambda (command)
+          (let* ((buf-name
+                  (disproject--process-buffer-name
+                   obj
+                   (project-name (disproject-project-instance
+                                  (disproject-scope-selected-project-ensure
+                                   disproject--environment-scope)))))
+                 (compilation-buffer-name-function
+                  (cl-constantly buf-name)))
+            (if-let* ((shell-command (call-interactively command)))
+                (compile shell-command)
+              (call-interactively #'compile))))
+        (cl-call-next-method)))
+
+;;;;; Suffix class for shell commands.
+
+(defclass disproject-shell-command-suffix (disproject-process-suffix)
+  ((new-process-buffer :initarg :new-process-buffer
+                       :initform 'confirm-kill-process
+                       :type (or null symbol)
+                       :documentation "\
+Value passed to `async-shell-command-buffer'.
+
+`disproject-process-suffix' is intended to be used with only a
+single process buffer, so `confirm-kill-process' is the default
+value to prevent other buffers (and processes) from being
+existing simultaneously.  In cases where this is not desired, the
+value may be set to another symbol recognized by
+`async-shell-command-buffer'.
+
+If the value is nil, the current value of
+`async-shell-command-buffer' will be used instead."))
+  "Disproject suffix class for shell commands.
+
+When using this class, the `command' slot should be a function
+that returns a string or nil.  If the value is a string, it will
+be passed to `async-shell-command'; otherwise, nil causes
+`async-shell-command' to be called interactively.")
+
+(cl-defmethod disproject-suffix-wrappers ((obj disproject-shell-command-suffix))
+  "Return a list of wrappers for the initial command for OBJ after adding its own.
+
+Set `shell-command-buffer-name-async' and
+`async-shell-command-buffer' and apply `async-shell-command' to
+the command's return value."
+  (cons (lambda (command)
+          (let* ((buf-name
+                  (disproject--process-buffer-name
+                   obj
+                   (project-name (disproject-project-instance
+                                  (disproject-scope-selected-project-ensure
+                                   disproject--environment-scope)))))
+                 (shell-command-buffer-name-async
+                  buf-name)
+                 (async-shell-command-buffer
+                  (if-let* ((new-process-buffer
+                             (oref obj new-process-buffer)))
+                      new-process-buffer
+                    async-shell-command-buffer)))
+            (if-let* ((shell-command (call-interactively command)))
+                (async-shell-command shell-command)
+              (call-interactively #'async-shell-command))))
+        (cl-call-next-method)))
 
 ;;;; Suffix setup functions.
 
