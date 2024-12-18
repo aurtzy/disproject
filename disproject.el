@@ -544,7 +544,7 @@ menu."
    :pad-keys t
    [("b" "Switch buffer" disproject-switch-to-buffer)
     ("B" "Buffer list" disproject-list-buffers)
-    ("c" disproject-compile)
+    ("c" "Compile" disproject-compile)
     ("d" "Dired" disproject-dired)
     ("k" "Kill buffers" disproject-kill-buffers)
     ("l" "Dir-locals file" disproject-dir-locals)
@@ -1390,61 +1390,61 @@ the command's return value."
 
 (transient-define-suffix disproject-dired ()
   "Open Dired in project root."
+  :class disproject-suffix
   (interactive)
-  (disproject-with-environment
-    (call-interactively #'project-dired)))
+  (call-interactively #'project-dired))
 
 (transient-define-suffix disproject-dir-locals ()
   "Open `dir-locals-file' in the project root.
 
 If prefix arg is non-nil, open the personal secondary
 file (\".dir-locals-2.el\" by default)."
+  :class disproject-suffix
   (interactive)
-  (disproject-with-environment
-    (find-file (if current-prefix-arg
-                   (concat (file-name-base dir-locals-file)
-                           "-2."
-                           (file-name-extension dir-locals-file))
-                 dir-locals-file))))
+  (find-file (if current-prefix-arg
+                 (concat (file-name-base dir-locals-file)
+                         "-2."
+                         (file-name-extension dir-locals-file))
+               dir-locals-file)))
 
 (transient-define-suffix disproject-execute-extended-command ()
   "Execute an extended command in project root."
+  :class disproject-suffix
   (interactive)
-  (disproject-with-environment
-    (call-interactively #'execute-extended-command)))
+  (call-interactively #'execute-extended-command))
 
 (transient-define-suffix disproject-find-dir ()
   "Find directory in project.
 
 The command used can be customized with
 `disproject-find-dir-command'."
+  :class disproject-suffix
   (interactive)
-  (disproject-with-environment
-    (call-interactively disproject-find-dir-command)))
+  (call-interactively disproject-find-dir-command))
 
 (transient-define-suffix disproject-find-file ()
   "Find file in project.
 
 The command used can be customized with
 `disproject-find-file-command'."
+  :class disproject-suffix
   (interactive)
-  (disproject-with-environment
-    (call-interactively disproject-find-file-command)))
+  (call-interactively disproject-find-file-command))
 
 (transient-define-suffix disproject-find-line ()
-  "Find matching line in open project buffers."
+  "Find matching line in project's open buffers."
+  :class disproject-suffix
   (interactive)
-  (disproject-with-environment
-    (call-interactively disproject-find-line-command)))
+  (call-interactively disproject-find-line-command))
 
 (transient-define-suffix disproject-find-regexp ()
   "Search project for regexp.
 
 The command used can be customized with
 `disproject-find-regexp-command'."
+  :class disproject-suffix
   (interactive)
-  (disproject-with-environment
-    (call-interactively disproject-find-regexp-command)))
+  (call-interactively disproject-find-regexp-command))
 
 (transient-define-suffix disproject-forget-project ()
   "Forget a project."
@@ -1513,15 +1513,15 @@ programs path."
 
 (transient-define-suffix disproject-kill-buffers ()
   "Kill all buffers related to project."
+  :class disproject-suffix
   (interactive)
-  (disproject-with-environment
-    (call-interactively #'project-kill-buffers)))
+  (call-interactively #'project-kill-buffers))
 
 (transient-define-suffix disproject-list-buffers ()
   "Display a list of open buffers for project."
+  :class disproject-suffix
   (interactive)
-  (disproject-with-environment
-    (call-interactively #'project-list-buffers)))
+  (call-interactively #'project-list-buffers))
 
 ;; DEPRECATED: Remove at least 1 month after earliest release with deprecation.
 (define-obsolete-function-alias 'disproject-magit-status
@@ -1529,28 +1529,28 @@ programs path."
 
 (transient-define-suffix disproject-magit-todos-list ()
   "Open a `magit-todos-list' buffer for project."
+  :class disproject-suffix
   (interactive)
   (declare-function magit-todos-list-internal "magit-todos")
-  (disproject-with-environment
-    (magit-todos-list-internal default-directory)))
+  (magit-todos-list-internal default-directory))
 
 (transient-define-suffix disproject-or-external-find-file ()
   "Find file in project or external roots.
 
 The command used can be customized with
 `disproject-or-external-find-file-command'."
+  :class disproject-suffix
   (interactive)
-  (disproject-with-environment
-    (call-interactively disproject-or-external-find-file-command)))
+  (call-interactively disproject-or-external-find-file-command))
 
 (transient-define-suffix disproject-or-external-find-regexp ()
   "Find regexp in project or external roots.
 
 The command used can be customized with
 `disproject-or-external-find-regexp-command'."
+  :class disproject-suffix
   (interactive)
-  (disproject-with-environment
-    (call-interactively disproject-or-external-find-regexp-command)))
+  (call-interactively disproject-or-external-find-regexp-command))
 
 (transient-define-suffix disproject-compile ()
   "Call `project-compile' in project.
@@ -1558,23 +1558,9 @@ The command used can be customized with
 The buffer name is determined by
 `disproject-process-buffer-name', which will be used to track the
 process status."
-  :description
-  (lambda ()
-    (if-let* ((project (disproject-scope-selected-project (disproject--scope)))
-              (buffer-name (disproject-process-buffer-name
-                            (disproject-project-root project)
-                            "default-compile")))
-        (disproject-custom--suffix-description (get-buffer buffer-name)
-                                               "Compile")
-      "Compile"))
-  (interactive)
-  (disproject-with-environment
-    (let* ((buffer-name
-            (disproject-process-buffer-name default-directory "default-compile"))
-           (project-compilation-buffer-name-function
-            (lambda (&rest _ignore) buffer-name)))
-      (call-interactively #'project-compile)
-      (disproject-add-sentinel-refresh-transient buffer-name))))
+  :class disproject-compilation-suffix
+  :buffer-id "default-compile"
+  (interactive))
 
 (transient-define-suffix disproject-remember-projects-open ()
   "Remember projects with open buffers."
@@ -1599,18 +1585,17 @@ process status."
 
 The command used can be customized with the variable
 `disproject-shell-command'."
+  :class disproject-suffix
   (interactive)
-  (disproject-with-environment
-    (call-interactively disproject-shell-command)))
+  (call-interactively disproject-shell-command))
 
 (transient-define-suffix disproject-shell-command ()
   "Run a shell command asynchronously in a project."
-  (interactive)
-  (disproject-with-environment
-    (let ((shell-command-buffer-name-async
-           (disproject-process-buffer-name default-directory
-                                           "async-shell-command")))
-      (call-interactively #'async-shell-command))))
+  :class disproject-shell-command-suffix
+  :new-process-buffer nil
+  :display-status? nil
+  :buffer-id "default-shell-command"
+  (interactive))
 
 (transient-define-suffix disproject-switch-project ()
   "Switch project to dispatch commands on.
@@ -1644,9 +1629,9 @@ to."
 
 The command used can be customized with
 `disproject-switch-to-buffer-command'."
+  :class disproject-suffix
   (interactive)
-  (disproject-with-environment
-    (call-interactively disproject-switch-to-buffer-command)))
+  (call-interactively disproject-switch-to-buffer-command))
 
 ;; DEPRECATED: Remove at least 1 month after earliest release with deprecation.
 (define-obsolete-function-alias 'disproject-vc-dir
@@ -1659,6 +1644,7 @@ The status command used depends on the variable
 `disproject-vc-status-commands' - see its documentation for
 configuring this function's behavior.  The chosen function will
 be called interactively."
+  :class disproject-suffix
   :description
   (lambda ()
     (concat (if-let* ((project (disproject-scope-selected-project
@@ -1671,18 +1657,17 @@ be called interactively."
               "VC")
             " status"))
   (interactive)
-  (disproject-with-environment
-    (let* ((scope (disproject--scope))
-           (project (disproject-scope-selected-project-ensure scope))
-           (backend (disproject-project-backend project)))
-      (unless backend
-        (user-error "No backend found for project: %s"
-                    (disproject-project-root project)))
-      (call-interactively
-       (if-let* ((command (alist-get backend disproject-vc-status-commands))
-                 ((fboundp command)))
-           command
-         (alist-get nil disproject-vc-status-commands))))))
+  (let* ((project (disproject-scope-selected-project-ensure
+                   disproject--environment-scope))
+         (backend (disproject-project-backend project)))
+    (unless backend
+      (user-error "No backend found for project: %s"
+                  (disproject-project-root project)))
+    (call-interactively
+     (if-let* ((command (alist-get backend disproject-vc-status-commands))
+               ((fboundp command)))
+         command
+       (alist-get nil disproject-vc-status-commands)))))
 
 (provide 'disproject)
 ;;; disproject.el ends here
