@@ -82,9 +82,9 @@ this list via `initialize-instance'.")
                 :value-type (repeat (sexp :tag "Custom suffix"))))
 
 (defcustom disproject-custom-suffixes '(("c" "Make"
-                                         :command-type compile
-                                         :command "make -k"
-                                         :identifier "make"))
+                                         (lambda () (interactive) "make -k")
+                                         :class disproject-compilation-suffix
+                                         :buffer-id "make"))
   "Commands for the `disproject-custom-dispatch' prefix.
 
 The custom dispatch was initially designed for suites of
