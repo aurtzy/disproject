@@ -174,13 +174,7 @@ the mentioned function, called when setting up the custom
 dispatch menu.  Non-default values must still be explicitly
 allowed by the user - this may be unsafe if unconditionally
 evaluated."
-  :type '(repeat (list (string :tag "Key bind")
-                       (string :tag "Description")
-                       (plist :inline t
-                              :tag "Properties"
-                              :key-type (choice (const :command-type)
-                                                (const :command)
-                                                (const :identifier)))))
+  :type 'sexp
   :group 'disproject)
 ;;;###autoload(put 'disproject-custom-suffixes 'safe-local-variable #'always)
 
@@ -1376,13 +1370,26 @@ the command's return value."
 
 ;;;; Suffix setup functions.
 
+(defun disproject-custom--old-form? (sexp)
+  "Return non-nil if SEXP seems like the old syntax for custom suffixes.
+
+This assumes that SEXP conforms to the old syntax if it is a list
+of lists, where the first list element has the `:command-type'
+keyword."
+  (and (listp sexp)
+       (listp (car sexp))
+       (memq :command-type (car sexp))))
+
 (defun disproject-custom--setup-suffixes (_)
   "Set up suffixes according to `disproject-custom-suffixes'."
   (transient-parse-suffixes
    'disproject-custom-dispatch
-   (mapcar #'disproject-custom--suffix
-           (disproject-project-custom-suffixes
-            (disproject-scope-selected-project-ensure (disproject--scope))))))
+   (let ((custom-suffixes (disproject-project-custom-suffixes
+                           (disproject-scope-selected-project-ensure
+                            (disproject--scope)))))
+     (if (disproject-custom--old-form? custom-suffixes)
+         (mapcar #'disproject-custom--suffix custom-suffixes)
+       custom-suffixes))))
 
 ;;;; Suffixes.
 
