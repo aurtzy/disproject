@@ -591,8 +591,11 @@ character.  These characters represent the following states:
    :class transient-column
    :pad-keys t
    :setup-children disproject-custom--setup-suffixes]
-  [("SPC" "Main dispatch" disproject-dispatch
-    :transient transient--do-replace)])
+  [ :class transient-row
+    ("SPC" "Main dispatch" disproject-dispatch
+     :transient transient--do-replace)
+    ("!" "Alternative compile" disproject-compile
+     :buffer-id "default-compile")])
 
 (transient-define-prefix disproject-manage-projects-dispatch ()
   "Dispatch commands for managing projects."
@@ -1312,13 +1315,7 @@ keyword."
                  (disproject-custom--suffix spec)
                spec))
            `(,@(disproject-project-custom-suffixes
-                (disproject-scope-selected-project-ensure (disproject--scope)))
-             ("!" "Alternative compile"
-              :command-type compile
-              :command (lambda ()
-                         (interactive)
-                         (compilation-read-command (eval compile-command)))
-              :identifier "default-compile")))))
+                (disproject-scope-selected-project-ensure (disproject--scope)))))))
 
 ;;;; Suffixes.
 
