@@ -1149,6 +1149,143 @@ up the environment."
   (disproject-with-root)
   (disproject-with-environment))
 
+;;;; Suffix classes.
+
+;;;;; Class for suffix commands that spawn a process.
+
+(defclass disproject-process-suffix (transient-suffix)
+  ((buffer-id :initarg :buffer-id
+              :initform nil
+              :documentation "\
+String.  Unique identifier for the process buffer associated with
+this suffix command.
+
+Users may set the same identifier for multiple commands to mark
+them as incompatible for a project (only one can run at a given
+time).
+
+If the `description' slot of the instance is a string, this slot
+will use it as a default value.  Otherwise, the description is
+assumed to be a function, and \"default\" will be used as the
+value instead, since there is no way to guarantee that a function
+will always return the same identifier.
+
+Implementations of suffix commands should handle the value as
+documented.")
+   (display-status? :initarg :display-status?
+                    :initform t
+                    :documentation "\
+Non-nil to display status of associated process buffer.")
+   (allow-multiple-buffers? :initarg :allow-multiple-buffers?
+                            :initform nil
+                            :documentation "\
+Non-nil if multiple buffers associated with the buffer ID may be
+created.
+
+If allowed, the `display-status?' slot will be ignored, and
+status will not be shown.  Suffix command implementations may
+also behave differently; for example, executing a command while a
+process is running could create a new buffer instead of killing
+the existing one."))
+  "Class for Disproject suffixes that spawn a process.
+
+This provides methods for managing things related to the
+associated command's process buffer.")
+
+(defun disproject-process-suffix--buffer-name (buffer-id project-name)
+  "Return a buffer name for a process suffix from BUFFER-ID and PROJECT-NAME."
+  (concat "*" project-name "-process|" buffer-id "*"))
+
+(cl-defgeneric disproject-process-suffix-buffer-name (_obj project-name)
+  "Return the OBJ suffix's process buffer name associated with PROJECT-NAME.
+
+PROJECT-NAME is the project name, which will be used to give a
+unique namespace to the project's process buffers.
+
+The default method uses \"default\" as the buffer name's unique
+identifier."
+  (disproject-process-suffix--buffer-name "default" project-name))
+
+(cl-defmethod disproject-process-suffix-buffer-name
+  ((obj disproject-process-suffix) project-name)
+  "Return the OBJ suffix's process buffer name associated with PROJECT-NAME."
+  (if-let* ((buffer-id
+             (or (oref obj buffer-id)
+                 (let ((description (oref obj description)))
+                   (and (stringp description) description)))))
+      (disproject-process-suffix--buffer-name buffer-id project-name)
+    (cl-call-next-method)))
+
+(cl-defmethod transient-format-description ((obj disproject-process-suffix))
+  "Format description for OBJ.
+
+If the `display-status?' slot is non-nil and
+`allow-multiple-buffers?' is nil, the description will be
+formatted with an indicator that describes the associated process
+buffer's current status."
+  ;; Preserve the transient "bug" warning if there is no description.
+  (if-let* ((description (cl-call-next-method)))
+      (if-let* (((and (oref obj display-status?)
+                      (null (oref obj allow-multiple-buffers?))))
+                (project (disproject-scope-selected-project (disproject--scope)))
+                (project-name (project-name
+                               (disproject-project-instance project)))
+                (buf-name (disproject-process-suffix-buffer-name obj project-name))
+                (buffer (get-buffer buf-name)))
+          (progn
+            ;; Refresh transient if process status changes.
+            (disproject-add-sentinel-refresh-transient buf-name)
+            (concat (cond
+                     ((null buffer)
+                      "")
+                     ((get-buffer-process buffer)
+                      (concat (propertize "[a]" 'face 'transient-enabled-suffix)
+                              " "))
+                     (t
+                      (concat (propertize "[i]" 'face 'transient-inactive-value)
+                              " ")))
+                    description))
+        description)))
+
+(defclass disproject-shell-command-suffix (disproject-process-suffix)
+  ((cmd :initarg :cmd
+        :initform nil
+        :documentation "\
+String or interactive function which returns a shell command that
+will be used to spawn a process.
+
+If the value is a string, it is used as the shell command.
+Otherwise, it should be an interactive function that returns a
+string to be used as the command.
+
+Implementations of suffix commands should handle spawning
+processes based on the value."))
+  "Class for suffix commands that execute shell commands.")
+
+(cl-defgeneric disproject-shell-command-suffix--cmd (_obj)
+  "Return a string shell command from OBJ.
+
+The default implementation returns nil."
+  nil)
+
+(cl-defmethod disproject-shell-command-suffix--cmd
+  ((obj disproject-shell-command-suffix))
+  "Return a string shell command from OBJ.
+
+Use the `cmd' slot of OBJ as the shell command.  If it is a
+command, interactively call it and use the return value as the
+shell command.
+
+May also return nil if the value of `cmd' is nil.
+
+When unable to convert to a string, throw an error."
+  (let ((cmd (oref obj cmd)))
+    (cond
+     ((null cmd) nil)
+     ((stringp cmd) cmd)
+     ((commandp cmd t) (call-interactively cmd))
+     (t (user-error "Not a string or command: %s" cmd)))))
+
 ;;;; Suffix setup functions.
 
 (defun disproject-custom--custom-spec? (spec)
