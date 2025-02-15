@@ -535,14 +535,17 @@ menu."
    :pad-keys t
    [("b" "Switch buffer" disproject-switch-to-buffer)
     ("B" "Buffer list" disproject-list-buffers)
-    ("c" disproject-compile)
+    ("c" "Compile" disproject-compile
+     :buffer-id "default-compile")
     ("d" "Dired" disproject-dired)
     ("k" "Kill buffers" disproject-kill-buffers)
     ("l" "Dir-locals file" disproject-dir-locals)
     ("s" "Shell" disproject-shell)
     ("v" disproject-vc-status
      :inapt-if-not disproject-prefix--version-control-apt?)]
-   [("!" "Run" disproject-shell-command)
+   [("!" "Run" disproject-shell-command
+     :buffer-id "default-shell-command"
+     :allow-multiple-buffers? t)
     ("M-x" "Extended cmd." disproject-execute-extended-command)]
    ["Find"
     ("D" "directory" disproject-find-dir)
@@ -1479,29 +1482,46 @@ The command used can be customized with
   (disproject-with-environment
     (call-interactively disproject-or-external-find-regexp-command)))
 
-(transient-define-suffix disproject-compile ()
-  "Call `project-compile' in project.
+(transient-define-suffix disproject-compile (command)
+  "Run COMMAND with `compile' in project root.
 
-The buffer name is determined by
-`disproject-process-buffer-name', which will be used to track the
-process status."
-  :description
-  (lambda ()
-    (if-let* ((project (disproject-scope-selected-project (disproject--scope)))
-              (buffer-name (disproject-process-buffer-name
-                            (disproject-project-root project)
-                            "default-compile")))
-        (disproject-custom--suffix-description (get-buffer buffer-name)
-                                               "Compile")
-      "Compile"))
-  (interactive)
-  (disproject-with-environment
-    (let* ((buffer-name
-            (disproject-process-buffer-name default-directory "default-compile"))
-           (project-compilation-buffer-name-function
-            (lambda (&rest _ignore) buffer-name)))
-      (call-interactively #'project-compile)
-      (disproject-add-sentinel-refresh-transient buffer-name))))
+When called interactively, try to use the `cmd' slot value of the
+current transient suffix object as the shell command.  Otherwise,
+fall back to `compile-command'.
+
+With prefix arg, always prompt.
+
+See type `disproject-shell-command-suffix' for documentation on
+transient suffix slots."
+  :class disproject-shell-command-suffix
+  (interactive
+   (disproject-with-env
+     (disproject-with-root
+       (list (if-let* ((obj (transient-suffix-object))
+                       (command (disproject-shell-command-suffix--cmd obj)))
+                 ;; We don't need to read if `compilation-read-command' is t,
+                 ;; since the command should already be considered safe from
+                 ;; `disproject-custom--suffixes-allowed?'.
+                 (if current-prefix-arg
+                     (compilation-read-command command)
+                   command)
+               (let ((command (eval compile-command)))
+                 (if (or compilation-read-command current-prefix-arg)
+                     (compilation-read-command command)
+                   command)))))))
+  (disproject-with-env
+    (disproject-with-root
+      (let* ((scope
+              (disproject--scope))
+             (project-name
+              (project-name (disproject-project-instance
+                             (disproject-scope-selected-project-ensure scope))))
+             (buf-name
+              (disproject-process-suffix-buffer-name
+               (transient-suffix-object) project-name))
+             (compilation-buffer-name-function
+              (cl-constantly buf-name)))
+        (compile command)))))
 
 (transient-define-suffix disproject-remember-projects-open ()
   "Remember projects with open buffers."
@@ -1526,14 +1546,45 @@ The command used can be customized with the variable
   (disproject-with-environment
     (call-interactively disproject-shell-command)))
 
-(transient-define-suffix disproject-shell-command ()
-  "Run a shell command asynchronously in a project."
-  (interactive)
-  (disproject-with-environment
-    (let ((shell-command-buffer-name-async
-           (disproject-process-buffer-name default-directory
-                                           "async-shell-command")))
-      (call-interactively #'async-shell-command))))
+(transient-define-suffix disproject-shell-command (command)
+  "Run COMMAND asynchronously in project root.
+
+When called interactively, try to use the `cmd' slot value of the
+current transient suffix object as the shell command.  Otherwise,
+prompt for a command to run.
+
+With prefix arg, always prompt.
+
+If the `allow-multiple-buffers?' slot of the current suffix
+object is nil, `async-shell-command-buffer' will be set to
+\\='confirm-kill-process so the process status can be accurately
+reflected.
+
+See type `disproject-shell-command-suffix' for documentation on
+transient suffix slots."
+  :class disproject-shell-command-suffix
+  (interactive
+   (disproject-with-env
+     (disproject-with-root
+       (list (if-let* ((obj (transient-suffix-object))
+                       (command (disproject-shell-command-suffix--cmd obj)))
+                 (if current-prefix-arg
+                     (read-shell-command "Async shell command: " command)
+                   command)
+               (read-shell-command "Async shell command: "))))))
+  (disproject-with-env
+    (disproject-with-root
+      (let* ((scope (disproject--scope))
+             (obj (transient-suffix-object))
+             (project-name (project-name
+                            (disproject-project-instance
+                             (disproject-scope-selected-project-ensure scope))))
+             (buf-name (disproject-process-suffix-buffer-name obj project-name))
+             (allow-multiple-buffers? (oref obj allow-multiple-buffers?))
+             (async-shell-command-buffer (if allow-multiple-buffers?
+                                             async-shell-command-buffer
+                                           'confirm-kill-process)))
+        (async-shell-command command buf-name)))))
 
 (transient-define-suffix disproject-switch-project ()
   "Switch project to dispatch commands on.
