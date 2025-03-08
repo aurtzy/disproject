@@ -522,6 +522,7 @@ menu."
     ("F" "file (+external)" disproject-or-external-find-file)
     ("g" "regexp" disproject-find-regexp)
     ("G" "regexp (+external)" disproject-or-external-find-regexp)
+    ("r" "regexp and replace" disproject-query-replace-regexp)
     ("L" "line occurrence" disproject-find-line)
     ("T" "todos" disproject-magit-todos-list
      :if disproject-prefix--magit-todos-apt?)]]
@@ -1403,6 +1404,12 @@ The command used can be customized with
   (interactive)
   (disproject-with-environment
     (call-interactively disproject-find-regexp-command)))
+
+(transient-define-suffix disproject-query-replace-regexp ()
+  "Search project for regexp, and replace it."
+  (interactive)
+  (disproject-with-environment
+    (call-interactively #'project-query-replace-regexp)))
 
 (transient-define-suffix disproject-forget-project ()
   "Forget a project."
