@@ -4,6 +4,8 @@ SRCDIR = $(shell dirname "$(realpath $(lastword $(MAKEFILE_LIST)))")
 
 DOCDIR = $(SRCDIR)/doc
 
+TESTDIR = $(SRCDIR)/test
+
 PKG = disproject
 
 EMACS ?= emacs
@@ -38,6 +40,10 @@ texi:
 info: texi
 	$(MAKEINFO) $(DOCDIR)/$(PKG).texi
 
-# Tests (no tests exist, so just do nothing for now).
+# Tests.
 
 check:
+	$(EMACS_BATCH) \
+		--directory $(SRCDIR) \
+		--load $(TESTDIR)/$(PKG)-test \
+		--funcall ert-run-tests-batch-and-exit
