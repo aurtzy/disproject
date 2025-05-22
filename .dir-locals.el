@@ -57,4 +57,15 @@ guix shell --pure --profile=$profile -- make run")))
                 (concat "\
 " guix-cmd " shell --pure --file=guix.scm --manifest=manifest.scm " emacs-package)))
        :buffer-id "package-emacs"
-       :comint? t)])))))
+       :comint? t)
+      ("t" "Run tests" disproject-compile
+       :cmd (lambda (args)
+              (interactive (list (transient-args transient-current-command)))
+              (let* ((pinned? (not (transient-arg-value
+                                    "--without-pinned-channels" args)))
+                     (profile (if pinned? ".pinned-guix-profile"
+                                ".latest-guix-profile")))
+                (concat "\
+profile=" profile "
+guix shell --pure --profile=$profile -- make check")))
+       :buffer-id "test-emacs")])))))
