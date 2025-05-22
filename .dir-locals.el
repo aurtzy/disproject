@@ -5,34 +5,61 @@
   .
   ((disproject-custom-suffixes
     .
-    (["From pinned channels"
-      ("t c" "Compile" disproject-compile
-       :cmd "\
-profile=.time-machine-guix-profile
+    (["Options"
+      ("-nc" "Without pinned channels" "--without-pinned-channels")]
+     ["Commands"
+      ("c" "Configure profile" disproject-compile
+       :cmd (lambda (args)
+              (interactive (list (transient-args transient-current-command)))
+              (let* ((pinned? (not (transient-arg-value
+                                    "--without-pinned-channels" args)))
+                     (profile (if pinned? ".pinned-guix-profile"
+                                ".latest-guix-profile"))
+                     (guix-cmd (if pinned?
+                                   "guix time-machine --channels=channels.scm --"
+                                 "guix"))
+                     (emacs-package (if pinned? "emacs" "emacs-next")))
+                (concat "\
+profile=" profile "
 [ -e $profile ] && rm $profile
 export GUIX_PACKAGE_PATH=''
-guix time-machine --channels=channels.scm -- \\
-	shell --development --file=guix.scm --file=guix.scm \\
-	--manifest=manifest.scm emacs \\
-	--root=$profile --search-paths"
-       :buffer-id "time-machine-profile")
-      ("t r" "Run" disproject-compile
-       :cmd "\
-guix shell --pure --profile=.time-machine-guix-profile -- \\
-	emacs --no-init-file --eval \"(require 'disproject)\""
-       :buffer-id "time-machine-profile")]
-     ["Latest"
-      ("l c" "Compile" disproject-compile
-       :cmd "\
-profile=.latest-guix-profile
-[ -e $profile ] && rm $profile
-export GUIX_PACKAGE_PATH=''
-guix shell --development --file=guix.scm --file=guix.scm \\
-	--manifest=manifest.scm emacs-next \\
-	--root=$profile --search-paths"
-       :buffer-id "latest-profile")
-      ("l r" "Run" disproject-compile
-       :cmd "\
-guix shell --pure --profile=.latest-guix-profile -- \\
-	emacs --no-init-file --eval \"(require 'disproject)\""
-       :buffer-id "latest-profile")])))))
+" guix-cmd " shell --development --file=guix.scm --manifest=manifest.scm \\
+	" emacs-package " \\
+	--root=$profile --search-paths")))
+       :buffer-id "profile")
+      ("r" "Run Emacs" disproject-compile
+       :cmd (lambda (args)
+              (interactive (list (transient-args transient-current-command)))
+              (let* ((pinned? (not (transient-arg-value
+                                    "--without-pinned-channels" args)))
+                     (profile (if pinned? ".pinned-guix-profile"
+                                ".latest-guix-profile")))
+                (concat "\
+profile=" profile "
+guix shell --pure --profile=$profile -- make run")))
+       :buffer-id "run-emacs"
+       :allow-multiple-buffers? t)
+      ("s" "Shell with package" disproject-compile
+       :cmd (lambda (args)
+              (interactive (list (transient-args transient-current-command)))
+              (let* ((pinned? (not (transient-arg-value
+                                    "--without-pinned-channels" args)))
+                     (guix-cmd (if pinned?
+                                   "guix time-machine --channels=channels.scm --"
+                                 "guix"))
+                     (emacs-package (if pinned? "emacs" "emacs-next")))
+                (concat "\
+" guix-cmd " shell --pure --file=guix.scm --manifest=manifest.scm " emacs-package)))
+       :buffer-id "package-emacs"
+       :comint? t)
+      ("t" "Test" disproject-compile
+       :cmd (lambda (args)
+              (interactive (list (transient-args transient-current-command)))
+              (let* ((pinned? (not (transient-arg-value
+                                    "--without-pinned-channels" args)))
+                     (profile (if pinned? ".pinned-guix-profile"
+                                ".latest-guix-profile")))
+                (concat "\
+profile=" profile "
+guix shell --pure --profile=$profile -- make test")))
+       :buffer-id "test-emacs")])))))
