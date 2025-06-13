@@ -34,6 +34,7 @@
 
 ;;; Code:
 
+(require 'cus-edit)
 (require 'eieio)
 (require 'grep)
 (require 'pcase)
@@ -490,6 +491,10 @@ initialized."
   (and (featurep 'magit-todos)
        (disproject-prefix--magit-apt?)))
 
+(defun disproject-prefix--customize-dirlocals-apt? ()
+  "Return non-nil if `customize-dirlocals' function exists."
+  (functionp 'customize-dirlocals))
+
 (defun disproject-prefix--version-control-apt? ()
   "Return non-nil if version control commands are apt to show.
 
@@ -579,6 +584,9 @@ character.  These characters represent the following states:
 (transient-define-prefix disproject-find-special-file-dispatch ()
   :class disproject--selected-project-prefix
   disproject--selected-project-header-group
+  ["Options"
+   ("-c" "Use Customize interface" "--customize"
+    :if disproject-prefix--customize-dirlocals-apt?)]
   ;; TODO: Make this customizable.
   ["Special files"
    :advice disproject-with-env-apply
@@ -937,6 +945,28 @@ function will be added to."
   (let ((file-root (file-name-base dir-locals-file))
         (file-extension (file-name-extension dir-locals-file)))
     (concat file-root "-2." file-extension)))
+
+(defun disproject-edit-dir-locals-file (file)
+  "Dispatch a function to edit dir-locals FILE depending on transient state.
+
+This supports `find-file' (default) and `customize-dirlocals';
+the latter of which will be used when the \"--customize\" value
+is in transient arguments.
+
+Note that `customize-dirlocals' was introduced in Emacs version
+30.1.  If the function is not available and the \"--customize\"
+value is passed, this function will not do anything."
+  (declare-function customize-dirlocals "cus-edit")
+  (let* ((args (if transient-current-command
+                   (transient-args transient-current-command)))
+         (customize? (transient-arg-value "--customize" args)))
+    (cond
+     (customize?
+      (if (functionp 'customize-dirlocals)
+          (customize-dirlocals file)
+        (user-error "`customize-dirlocals' was added in Emacs 30.1")))
+     (t
+      (find-file file)))))
 
 (defun disproject-custom--suffix (spec-entry)
   "Construct and return a suffix to be parsed by `transient-parse-suffixes'.
@@ -1599,6 +1629,7 @@ The secondary dir-locals file may be accessed with
   :class disproject-find-special-file-suffix
   :key "l"
   :file #'disproject-dir-locals-file
+  :find-file-function #'disproject-edit-dir-locals-file
   (interactive)
   (disproject-find-special-file))
 
@@ -1610,6 +1641,7 @@ The primary dir-locals file may be accessed with
   :class disproject-find-special-file-suffix
   :key "L"
   :file #'disproject-dir-locals-2-file
+  :find-file-function #'disproject-edit-dir-locals-file
   (interactive)
   (disproject-find-special-file))
 
