@@ -915,6 +915,16 @@ function will be added to."
      :before (process-sentinel process)
      #'disproject--refresh-transient)))
 
+(defun disproject-dir-locals-file ()
+  "Return `dir-locals-file'."
+  dir-locals-file)
+
+(defun disproject-dir-locals-2-file ()
+  "Return the secondary `dir-locals-file'."
+  (let ((file-root (file-name-base dir-locals-file))
+        (file-extension (file-name-extension dir-locals-file)))
+    (concat file-root "-2." file-extension)))
+
 (defun disproject-custom--suffix (spec-entry)
   "Construct and return a suffix to be parsed by `transient-parse-suffixes'.
 
@@ -1493,10 +1503,8 @@ file (\".dir-locals-2.el\" by default)."
   (interactive)
   (disproject-with-environment
     (find-file (if current-prefix-arg
-                   (concat (file-name-base dir-locals-file)
-                           "-2."
-                           (file-name-extension dir-locals-file))
-                 dir-locals-file))))
+                   (disproject-dir-locals-2-file)
+                 (disproject-dir-locals-file)))))
 
 (transient-define-suffix disproject-execute-extended-command ()
   "Execute an extended command in project root."
