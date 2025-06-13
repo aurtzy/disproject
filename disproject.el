@@ -136,7 +136,7 @@ This variable is marked safe due to various reasons discussed in
 `disproject-custom--suffixes-allowed?'.  Prompts are deferred to
 the mentioned function for explicit permission by the user - this
 may be unsafe if unconditionally evaluated."
-  :type '(repeat sexp)
+  :type 'sexp
   :group 'disproject)
 ;;;###autoload(put 'disproject-custom-suffixes 'safe-local-variable #'always)
 
