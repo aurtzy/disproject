@@ -426,16 +426,20 @@ initialized."
     (unless (oref obj scope)
       (oset obj scope (disproject-scope)))))
 
-;;;;; Disproject custom-suffixes prefix
-;; HACK: A prefix specific to custom-dispatch is needed to avoid an issue caused
-;; by prompts.  `disproject-custom--setup-suffixes' is perfectly capable of
-;; getting custom-suffixes, but when a prompt is made in it, there is breakage
-;; in the menu; e.g. pressing invalid keys can result in the menu being "sticky"
-;; and passing inputs to the current buffer instead of the transient menu.  This
-;; may be an upstream issue that has something to do with prompts made during
-;; transient setup.
+;;;;; `disproject--selected-project-prefix' class.
 
-(defclass disproject--custom-suffixes-prefix (disproject-prefix) ()
+(defclass disproject--selected-project-prefix (disproject-prefix) ()
+  "Class for Disproject prefixes that require a project to be selected.")
+
+(cl-defmethod transient-init-scope ((obj disproject--selected-project-prefix))
+  "Ensure there is a selected project after initializing scope for OBJ."
+  (cl-call-next-method)
+  (disproject-scope-selected-project-ensure (oref obj scope)))
+
+;;;;; `disproject--custom-suffixes-prefix' class.
+
+(defclass disproject--custom-suffixes-prefix
+  (disproject--selected-project-prefix) ()
   "Class for Disproject prefixes that need to use custom suffixes.")
 
 (cl-defmethod transient-init-scope ((obj disproject--custom-suffixes-prefix))
@@ -525,7 +529,6 @@ menu."
      :buffer-id "compile")
     ("d" "Dired" disproject-dired)
     ("k" "Kill buffers" disproject-kill-buffers)
-    ("l" "Dir-locals file" disproject-dir-locals)
     ("s" "Shell" disproject-shell)
     ("v" disproject-vc-status
      :inapt-if-not disproject-prefix--version-control-apt?)
@@ -543,6 +546,7 @@ menu."
     ("g" "regexp" disproject-find-regexp)
     ("G" "regexp (+external)" disproject-or-external-find-regexp)
     ("r" "regexp and replace" disproject-query-replace-regexp)
+    ("l" "special file" disproject-find-special-file-dispatch)
     ("L" "line occurrence" disproject-find-line)
     ("T" "todos" disproject-magit-todos-list
      :if disproject-prefix--magit-todos-apt?)]]
@@ -571,6 +575,15 @@ character.  These characters represent the following states:
      :transient transient--do-replace)
     ("!" "Alternative compile" disproject-compile
      :buffer-id "compile")])
+
+(transient-define-prefix disproject-find-special-file-dispatch ()
+  :class disproject--selected-project-prefix
+  disproject--selected-project-header-group
+  ;; TODO: Make this customizable.
+  ["Special files"
+   :advice disproject-with-env-apply
+   (disproject-find-dir-locals-file)
+   (disproject-find-dir-locals-2-file)])
 
 (transient-define-prefix disproject-manage-projects-dispatch ()
   "Dispatch commands for managing projects."
@@ -1433,6 +1446,60 @@ somewhere so it can be accessed later and applied; for example,
 through a shared object in the transient scope."))
   "Class for suffixes that manage `display-buffer' action settings.")
 
+;;;;; `disproject-find-special-file-suffix' class.
+
+(defclass disproject-find-special-file-suffix (transient-suffix)
+  ((file :initarg :file
+         :initform "."
+         :type (or string symbol)
+         :documentation "The special file's base name.
+
+This slot's value should be a string or function that returns a
+string.
+
+By default, the file is the project root (\".\" is relative to
+the root directory).")
+   (find-file-function :initarg :find-file-function
+                       :initform #'find-file
+                       :type function
+                       :documentation "\
+Function that is applied to this object's \\='file slot value to edit it."))
+  "Class for convenience suffixes to edit common project files.")
+
+(cl-defmethod disproject-find-special-file-suffix-file
+  ((obj disproject-find-special-file-suffix))
+  "Return OBJ's \\='file slot value as a string."
+  (pcase-exhaustive (oref obj file)
+    ((and (pred functionp) value)
+     (funcall value))
+    ((and (pred stringp) value)
+     value)))
+
+(cl-defmethod transient-format-description
+  ((obj disproject-find-special-file-suffix))
+  "Return a formatted description for OBJ.
+
+If the \\='description slot value is nil, this method will format
+and return the \\='file slot value as the description.
+Otherwise, this method behaves the same as the method for
+`transient-suffix'."
+  (if (oref obj description)
+      (cl-call-next-method)
+    (let* ((file (disproject-find-special-file-suffix-file obj))
+           (scope (disproject--scope))
+           (project-root (disproject-project-root
+                          (pcase (disproject-scope-selected-project scope)
+                            ((pred null)
+                             (error
+                              "No project selected; cannot format description"))
+                            (value
+                             value))))
+           (file-path (file-name-concat project-root file)))
+      (propertize file 'face
+                  (if (file-exists-p file-path)
+                      'transient-value
+                    'transient-inactive-value)))))
+
 ;;;; Suffix setup functions.
 
 (defun disproject-custom--custom-spec? (spec)
@@ -1521,6 +1588,28 @@ The command used can be customized with
   (disproject-with-environment
     (call-interactively disproject-find-dir-command)))
 
+(transient-define-suffix disproject-find-dir-locals-file ()
+  "Find `dir-locals-file' in project root.
+
+The secondary dir-locals file may be accessed with
+`disproject-find-dir-locals-2-file'."
+  :class disproject-find-special-file-suffix
+  :key "l"
+  :file #'disproject-dir-locals-file
+  (interactive)
+  (disproject-find-special-file))
+
+(transient-define-suffix disproject-find-dir-locals-2-file ()
+  "Find secondary `dir-locals-file' in project root.
+
+The primary dir-locals file may be accessed with
+`disproject-find-dir-locals-file'."
+  :class disproject-find-special-file-suffix
+  :key "L"
+  :file #'disproject-dir-locals-2-file
+  (interactive)
+  (disproject-find-special-file))
+
 (transient-define-suffix disproject-find-file ()
   "Find file in project.
 
@@ -1544,6 +1633,23 @@ The command used can be customized with
   (interactive)
   (disproject-with-environment
     (call-interactively disproject-find-regexp-command)))
+
+(transient-define-suffix disproject-find-special-file ()
+  "Find a special file in project.
+
+By default, this command will find the project root directory.
+Prefixes may override the `file' slot to make this suffix more
+useful.
+
+See type `disproject-find-special-file-suffix' for documentation
+on transient suffix slots."
+  :class disproject-find-special-file-suffix
+  (interactive)
+  (disproject-with-root
+    (let* ((suffix (transient-suffix-object))
+           (file (disproject-find-special-file-suffix-file suffix))
+           (find-file-function (oref suffix find-file-function)))
+      (funcall find-file-function file))))
 
 (transient-define-suffix disproject-query-replace-regexp ()
   "Search project for regexp and query-replace matches."
